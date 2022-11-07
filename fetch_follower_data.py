@@ -11,7 +11,10 @@ from tweepy.errors import TooManyRequests
 def get_user_id(client: tweepy.Client, username: str) -> int:
     """Fetch the user ID from a given user name."""
     user = client.get_user(username=username)
-    return user.data.id
+    if user and user.data:
+        return user.data.id
+    print(f"Invalid username: {username}", file=sys.stderr)
+    sys.exit(-1)
 
 
 def read_config_data(config_file: str) -> dict:
@@ -43,7 +46,7 @@ def read_config_data(config_file: str) -> dict:
 def fetch_follower_data(
     config: str,
     username: str,
-    pagination_token: str,
+    continue_: bool,
 ):
     """Fetch the follower data for the given user."""
 
@@ -54,6 +57,10 @@ def fetch_follower_data(
     user_id = get_user_id(client, username)
 
     followers = []
+    pagination_token = None
+    if continue_:
+        followers, pagination_token = read_temporary_data(username)
+
     done = False
     while True:
         try:
@@ -92,20 +99,34 @@ def fetch_follower_data(
             done = True
             break
 
-    if not done:
-        if pagination_token:
-            print(f"Too many requests: next token is {pagination_token}")
-        else:
-            print("Too many requests already! Wait 15 minutes.")
-
     if followers:
-        write_follower_data(f"{username}_{pagination_token}", followers)
+        if done:
+            write_follower_data(username, followers)
+        else:
+            write_temporary_data(username, followers, pagination_token)
+            print(
+                "Too many requests. Try again in 15 minutes with the --continue parameter."
+            )
+            sys.exit(-1)
+
+
+def read_temporary_data(username: str):
+    try:
+        with open(f"{username}-tmp.json") as f:
+            data = json.load(f)
+            return data["followers"], data["next_token"]
+    except FileNotFoundError:
+        return [], None
+
+
+def write_temporary_data(username: str, follower_data: list, pagination_token: str):
+    with open(f"{username}-tmp.json", "w") as f:
+        tmp_data = {"followers": follower_data, "next_token": pagination_token}
+        json.dump(tmp_data, f)
 
 
 def write_follower_data(filename: str, follower_data: list):
-    """Write the follower data into a .csv and .json file."""
-    with open(f"{filename}.json", "w") as f:
-        json.dump(follower_data, f)
+    """Write the follower data into a .csv file."""
 
     for ix, follower in enumerate(follower_data):
         for k, v in follower.items():
@@ -120,7 +141,7 @@ def write_follower_data(filename: str, follower_data: list):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.yml")
-    parser.add_argument("-p", "--pagination-token", default=None)
+    parser.add_argument("--continue", dest="continue_", action="store_true")
     parser.add_argument("username")
 
     args = parser.parse_args()
