@@ -8,41 +8,6 @@ import yaml
 from tweepy.errors import TooManyRequests
 
 
-def get_user_id(client: tweepy.Client, username: str) -> int:
-    """Fetch the user ID from a given user name."""
-    user = client.get_user(username=username)
-    if user and user.data:
-        return user.data.id
-    print(f"Invalid username: {username}", file=sys.stderr)
-    sys.exit(-1)
-
-
-def read_config_data(config_file: str) -> dict:
-    """Read in the configuration data."""
-    with open(config_file, "r") as f:
-        config_data = yaml.safe_load(f)
-
-    fields = set(["username", "public_metrics"])
-    try:
-        fields.update(config_data["user_fields"])
-    except KeyError:
-        pass
-
-    tweet_fields = set(["text"])
-    try:
-        tweet_fields.update(config_data["tweet_fields"])
-    except KeyError:
-        pass
-
-    try:
-        bearer_token = config_data["bearer_token"]
-    except KeyError:
-        print(f"Missing bearer token in config file {config_file}", file=sys.stderr)
-        sys.exit(-1)
-
-    return fields, tweet_fields, bearer_token
-
-
 def fetch_follower_data(
     config: str,
     username: str,
@@ -75,27 +40,12 @@ def fetch_follower_data(
         except TooManyRequests:
             break
 
-        try:
-            pinned_tweets = {tweet.id: tweet for tweet in response.includes["tweets"]}
-        except KeyError:
-            pinned_tweets = {}
+        pinned_tweets = extract_pinned_tweets(response)
 
         for datum in response.data:
-            new_follower = {field: datum[field] for field in user_fields}
-            new_follower.update(new_follower.pop("public_metrics"))
-            if datum["pinned_tweet_id"]:
-                try:
-                    tweet = pinned_tweets[datum["pinned_tweet_id"]]
-                    new_follower.update(
-                        {
-                            f"pinned_tweet_{field}": tweet[field]
-                            for field in tweet_fields
-                        }
-                    )
-                except KeyError:
-                    pass
-
-            followers.append(new_follower)
+            followers.append(
+                extract_follower_data(datum, pinned_tweets, user_fields, tweet_fields)
+            )
 
         try:
             pagination_token = response.meta["next_token"]
@@ -112,6 +62,66 @@ def fetch_follower_data(
                 "Too many requests. Try again in 15 minutes with the --continue parameter."
             )
             sys.exit(-1)
+
+
+def get_user_id(client: tweepy.Client, username: str) -> int:
+    """Fetch the user ID from a given user name."""
+    user = client.get_user(username=username)
+    if user and user.data:
+        return user.data.id
+    print(f"Invalid username: {username}", file=sys.stderr)
+    sys.exit(-1)
+
+
+def extract_pinned_tweets(response_data: tweepy.Response) -> dict:
+    """Extract the pinned tweets from the response data."""
+    try:
+        return {tweet.id: tweet for tweet in response_data.includes["tweets"]}
+    except KeyError:
+        return {}
+
+
+def extract_follower_data(
+    datum: dict, pinned_tweets: dict, user_fields: list, tweet_fields: list
+) -> dict:
+    """Extract a user data from the response data."""
+    new_follower = {field: datum[field] for field in user_fields}
+    new_follower.update(new_follower.pop("public_metrics"))
+    if datum["pinned_tweet_id"]:
+        try:
+            tweet = pinned_tweets[datum["pinned_tweet_id"]]
+            new_follower.update(
+                {f"pinned_tweet_{field}": tweet[field] for field in tweet_fields}
+            )
+        except KeyError:
+            pass
+    return new_follower
+
+
+def read_config_data(config_file: str) -> dict:
+    """Read in the configuration data."""
+    with open(config_file, "r") as f:
+        config_data = yaml.safe_load(f)
+
+    fields = set(["username", "public_metrics"])
+    try:
+        fields.update(config_data["user_fields"])
+    except KeyError:
+        pass
+
+    tweet_fields = set(["text"])
+    try:
+        tweet_fields.update(config_data["tweet_fields"])
+    except KeyError:
+        pass
+
+    try:
+        bearer_token = config_data["bearer_token"]
+    except KeyError:
+        print(f"Missing bearer token in config file {config_file}", file=sys.stderr)
+        sys.exit(-1)
+
+    return fields, tweet_fields, bearer_token
 
 
 def read_temporary_data(username: str):
