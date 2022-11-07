@@ -58,10 +58,15 @@ def fetch_follower_data(
             write_follower_data(username, followers)
         else:
             write_temporary_data(username, followers, pagination_token)
-            print(
-                "Too many requests. Try again in 15 minutes with the --continue parameter."
+            sys.exit(
+                "Too many requests. Try again in 15 minutes with the --continue parameter.",
+                file=sys.stderr,
             )
-            sys.exit(-1)
+    else:
+        sys.exit(
+            "No followers. Either too many requests or a very unpopular account.",
+            file=sys.stderr,
+        )
 
 
 def get_user_id(client: tweepy.Client, username: str) -> int:
@@ -69,8 +74,7 @@ def get_user_id(client: tweepy.Client, username: str) -> int:
     user = client.get_user(username=username)
     if user and user.data:
         return user.data.id
-    print(f"Invalid username: {username}", file=sys.stderr)
-    sys.exit(-1)
+    sys.exit(f"Invalid username: {username}", file=sys.stderr)
 
 
 def extract_pinned_tweets(response_data: tweepy.Response) -> dict:
@@ -118,8 +122,7 @@ def read_config_data(config_file: str) -> dict:
     try:
         bearer_token = config_data["bearer_token"]
     except KeyError:
-        print(f"Missing bearer token in config file {config_file}", file=sys.stderr)
-        sys.exit(-1)
+        sys.exit(f"Missing bearer token in config file {config_file}", file=sys.stderr)
 
     return fields, tweet_fields, bearer_token
 
