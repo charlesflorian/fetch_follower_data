@@ -75,7 +75,11 @@ def fetch_follower_data(
         except TooManyRequests:
             break
 
-        pinned_tweets = {tweet.id: tweet for tweet in response.includes["tweets"]}
+        try:
+            pinned_tweets = {tweet.id: tweet for tweet in response.includes["tweets"]}
+        except KeyError:
+            pinned_tweets = {}
+
         for datum in response.data:
             new_follower = {field: datum[field] for field in user_fields}
             new_follower.update(new_follower.pop("public_metrics"))
