@@ -1,0 +1,6 @@
+.venv
+*config.yml
+tmp
+*.log
+*.json
+*.csv
